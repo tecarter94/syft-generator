@@ -1,4 +1,4 @@
-package main.java.org.jboss.sbomer.syft.generator.adapter.out;
+package org.jboss.sbomer.syft.generator.adapter.out;
 
 import java.time.Instant;
 import java.util.List;
@@ -9,12 +9,12 @@ import org.eclipse.microprofile.reactive.messaging.Emitter;
 import org.jboss.sbomer.events.common.ContextSpec;
 import org.jboss.sbomer.events.generator.GenerationUpdate;
 import org.jboss.sbomer.events.generator.GenerationUpdateData;
+import org.jboss.sbomer.syft.generator.core.domain.GenerationStatus;
+import org.jboss.sbomer.syft.generator.core.port.spi.StatusNotifier;
 
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import lombok.extern.slf4j.Slf4j;
-import main.java.org.jboss.sbomer.syft.generator.core.domain.GenerationStatus;
-import main.java.org.jboss.sbomer.syft.generator.core.port.spi.StatusNotifier;
 
 @ApplicationScoped
 @Slf4j

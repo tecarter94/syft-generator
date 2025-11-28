@@ -1,4 +1,4 @@
-package main.java.org.jboss.sbomer.syft.generator.adapter.out;
+package org.jboss.sbomer.syft.generator.adapter.out;
 
 import java.io.ByteArrayOutputStream;
 import java.nio.ByteBuffer;
@@ -15,12 +15,12 @@ import org.jboss.sbomer.events.common.ContextSpec;
 import org.jboss.sbomer.events.common.FailureSpec;
 import org.jboss.sbomer.events.error.ErrorData;
 import org.jboss.sbomer.events.error.ProcessingFailed;
+import org.jboss.sbomer.syft.generator.core.ApplicationConstants;
+import org.jboss.sbomer.syft.generator.core.port.spi.FailureNotifier;
 
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import lombok.extern.slf4j.Slf4j;
-import main.java.org.jboss.sbomer.syft.generator.core.ApplicationConstants;
-import main.java.org.jboss.sbomer.syft.generator.core.port.spi.FailureNotifier;
 
 @ApplicationScoped
 @Slf4j

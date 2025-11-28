@@ -1,16 +1,16 @@
-package main.java.org.jboss.sbomer.syft.generator.adapter.in;
+package org.jboss.sbomer.syft.generator.adapter.in;
 
-import static main.java.org.jboss.sbomer.syft.generator.core.ApplicationConstants.COMPONENT_NAME;
+import static org.jboss.sbomer.syft.generator.core.ApplicationConstants.COMPONENT_NAME;
 
 import org.eclipse.microprofile.reactive.messaging.Incoming;
 import org.jboss.sbomer.events.orchestration.GenerationCreated;
+import org.jboss.sbomer.syft.generator.core.port.api.GenerationOrchestrator;
+import org.jboss.sbomer.syft.generator.core.port.spi.FailureNotifier;
+import org.jboss.sbomer.syft.generator.core.utility.FailureUtility;
 
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import lombok.extern.slf4j.Slf4j;
-import main.java.org.jboss.sbomer.syft.generator.core.port.api.GenerationOrchestrator;
-import main.java.org.jboss.sbomer.syft.generator.core.port.spi.FailureNotifier;
-import main.java.org.jboss.sbomer.syft.generator.core.utility.FailureUtility;
 
 @ApplicationScoped
 @Slf4j

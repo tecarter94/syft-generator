@@ -1,4 +1,4 @@
-package main.java.org.jboss.sbomer.syft.generator.core.service;
+package org.jboss.sbomer.syft.generator.core.service;
 
 import java.util.List;
 import java.util.Map;
@@ -8,18 +8,18 @@ import java.util.concurrent.ConcurrentLinkedQueue;
 
 import org.eclipse.microprofile.config.inject.ConfigProperty;
 import org.jboss.sbomer.events.common.GenerationRequestSpec;
+import org.jboss.sbomer.syft.generator.core.domain.GenerationStatus;
+import org.jboss.sbomer.syft.generator.core.domain.model.GenerationTask;
+import org.jboss.sbomer.syft.generator.core.port.api.GenerationOrchestrator;
+import org.jboss.sbomer.syft.generator.core.port.spi.FailureNotifier;
+import org.jboss.sbomer.syft.generator.core.port.spi.GenerationExecutor;
+import org.jboss.sbomer.syft.generator.core.port.spi.StatusNotifier;
+import org.jboss.sbomer.syft.generator.core.utility.FailureUtility;
 
 import io.quarkus.scheduler.Scheduled;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import lombok.extern.slf4j.Slf4j;
-import main.java.org.jboss.sbomer.syft.generator.core.domain.GenerationStatus;
-import main.java.org.jboss.sbomer.syft.generator.core.domain.model.GenerationTask;
-import main.java.org.jboss.sbomer.syft.generator.core.port.api.GenerationOrchestrator;
-import main.java.org.jboss.sbomer.syft.generator.core.port.spi.FailureNotifier;
-import main.java.org.jboss.sbomer.syft.generator.core.port.spi.GenerationExecutor;
-import main.java.org.jboss.sbomer.syft.generator.core.port.spi.StatusNotifier;
-import main.java.org.jboss.sbomer.syft.generator.core.utility.FailureUtility;
 
 @ApplicationScoped
 @Slf4j
@@ -79,7 +79,7 @@ public class GeneratorService implements GenerationOrchestrator {
     }
 
     @Scheduled(every = "{sbomer.generator.poll-interval:10s}")
-    void processQueue() {
+    public void processQueue() {
         if (pendingQueue.isEmpty()) {
             return;
         }

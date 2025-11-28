@@ -1,6 +1,6 @@
-package main.java.org.jboss.sbomer.syft.generator.core.port.spi;
+package org.jboss.sbomer.syft.generator.core.port.spi;
 
-import main.java.org.jboss.sbomer.syft.generator.core.domain.model.GenerationTask;
+import org.jboss.sbomer.syft.generator.core.domain.model.GenerationTask;
 
 /**
  * Driven Port (SPI) for executing the actual generation work.

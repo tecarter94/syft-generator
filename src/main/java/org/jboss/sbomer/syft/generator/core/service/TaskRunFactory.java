@@ -1,4 +1,4 @@
-package main.java.org.jboss.sbomer.syft.generator.core.service;
+package org.jboss.sbomer.syft.generator.core.service;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -7,12 +7,12 @@ import java.util.Map;
 
 import org.eclipse.microprofile.config.inject.ConfigProperty;
 import org.jboss.sbomer.events.common.GenerationRequestSpec;
+import org.jboss.sbomer.syft.generator.core.domain.model.GenerationTask;
 
 import io.fabric8.kubernetes.api.model.EmptyDirVolumeSource;
 import io.fabric8.kubernetes.api.model.Quantity;
 import io.fabric8.tekton.v1beta1.*;
 import jakarta.enterprise.context.ApplicationScoped;
-import main.java.org.jboss.sbomer.syft.generator.core.domain.model.GenerationTask;
 
 @ApplicationScoped
 public class TaskRunFactory {

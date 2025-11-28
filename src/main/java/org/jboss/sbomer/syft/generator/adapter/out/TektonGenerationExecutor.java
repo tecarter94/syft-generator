@@ -1,13 +1,14 @@
-package main.java.org.jboss.sbomer.syft.generator.adapter.out;
+package org.jboss.sbomer.syft.generator.adapter.out;
+
+import org.jboss.sbomer.syft.generator.core.domain.model.GenerationTask;
+import org.jboss.sbomer.syft.generator.core.port.spi.GenerationExecutor;
+import org.jboss.sbomer.syft.generator.core.service.TaskRunFactory;
 
 import io.fabric8.kubernetes.client.KubernetesClient;
 import io.fabric8.tekton.v1beta1.TaskRun;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import lombok.extern.slf4j.Slf4j;
-import main.java.org.jboss.sbomer.syft.generator.core.domain.model.GenerationTask;
-import main.java.org.jboss.sbomer.syft.generator.core.port.spi.GenerationExecutor;
-import main.java.org.jboss.sbomer.syft.generator.core.service.TaskRunFactory;
 
 @ApplicationScoped
 @Slf4j

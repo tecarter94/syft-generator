@@ -1,4 +1,4 @@
-package main.java.org.jboss.sbomer.syft.generator.core.domain.model;
+package org.jboss.sbomer.syft.generator.core.domain.model;
 
 import org.jboss.sbomer.events.common.GenerationRequestSpec;
 

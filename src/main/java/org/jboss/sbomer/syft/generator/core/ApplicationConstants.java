@@ -1,4 +1,4 @@
-package main.java.org.jboss.sbomer.syft.generator.core;
+package org.jboss.sbomer.syft.generator.core;
 
 public class ApplicationConstants {
 

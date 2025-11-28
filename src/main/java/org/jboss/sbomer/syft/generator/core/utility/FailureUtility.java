@@ -1,4 +1,4 @@
-package main.java.org.jboss.sbomer.syft.generator.core.utility;
+package org.jboss.sbomer.syft.generator.core.utility;
 
 import java.io.PrintWriter;
 import java.io.StringWriter;

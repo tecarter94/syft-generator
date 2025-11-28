@@ -1,8 +1,13 @@
-package main.java.org.jboss.sbomer.syft.generator.adapter.in;
+package org.jboss.sbomer.syft.generator.adapter.in;
 
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+
+import org.jboss.sbomer.syft.generator.core.domain.GenerationStatus;
+import org.jboss.sbomer.syft.generator.core.port.api.GenerationOrchestrator;
+import org.jboss.sbomer.syft.generator.core.port.spi.FailureNotifier;
+import org.jboss.sbomer.syft.generator.core.utility.FailureUtility;
 
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -14,10 +19,6 @@ import io.javaoperatorsdk.operator.api.reconciler.Reconciler;
 import io.javaoperatorsdk.operator.api.reconciler.UpdateControl;
 import jakarta.inject.Inject;
 import lombok.extern.slf4j.Slf4j;
-import main.java.org.jboss.sbomer.syft.generator.core.domain.GenerationStatus;
-import main.java.org.jboss.sbomer.syft.generator.core.port.api.GenerationOrchestrator;
-import main.java.org.jboss.sbomer.syft.generator.core.port.spi.FailureNotifier;
-import main.java.org.jboss.sbomer.syft.generator.core.utility.FailureUtility;
 
 @ControllerConfiguration(name = "syft-task-reconciler", generationAwareEventProcessing = false)
 @Slf4j

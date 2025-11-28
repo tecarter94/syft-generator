@@ -1,8 +1,8 @@
-package main.java.org.jboss.sbomer.syft.generator.core.port.spi;
+package org.jboss.sbomer.syft.generator.core.port.spi;
 
 import java.util.List;
 
-import main.java.org.jboss.sbomer.syft.generator.core.domain.GenerationStatus;
+import org.jboss.sbomer.syft.generator.core.domain.GenerationStatus;
 
 /**
  * Driven Port (SPI) for notifying the core system (sbom-service) of state changes happening in an SBOM generation.

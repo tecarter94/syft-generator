@@ -1,4 +1,4 @@
-package main.java.org.jboss.sbomer.syft.generator.core.port.spi;
+package org.jboss.sbomer.syft.generator.core.port.spi;
 
 import org.jboss.sbomer.events.common.FailureSpec;
 

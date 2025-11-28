@@ -1,10 +1,9 @@
-package main.java.org.jboss.sbomer.syft.generator.core.port.api;
+package org.jboss.sbomer.syft.generator.core.port.api;
 
 import java.util.List;
 
 import org.jboss.sbomer.events.common.GenerationRequestSpec;
-
-import main.java.org.jboss.sbomer.syft.generator.core.domain.GenerationStatus;
+import org.jboss.sbomer.syft.generator.core.domain.GenerationStatus;
 
 /**
  * Driving Port (API) for the Generator Core Domain.
