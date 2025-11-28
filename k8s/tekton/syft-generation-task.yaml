@@ -1,0 +1,233 @@
+apiVersion: tekton.dev/v1beta1
+kind: Task
+metadata:
+  name: generator-syft
+spec:
+  results:
+    - name: sbom-url
+      description: "The JSON map of uploaded filenames to their permanent URLs"
+  params:
+    # --- CONFIGURATION PARAMETERS ---
+    - name: agent-image
+      description: "The image containing Syft and local tools"
+      default: "localhost/syft-agent:latest"
+    - name: agent-pull-policy
+      description: "Pull policy for local agent"
+      default: "Never"
+    # ----------------------------------
+    - name: generation-id
+      type: string
+      description: "The unique ID of this generation (used for storage pathing)"
+    - name: storage-service-url
+      type: string
+      description: "The internal URL of the manifest-storage-service"
+    - name: image
+      type: string
+      description: "Container image to generate manifest for"
+    - name: retry-count
+      type: string
+      default: "30"
+    - name: retry-delay
+      type: string
+      default: "1"
+    - name: retry-max-delay
+      type: string
+      default: "60"
+  steps:
+    - name: inspect
+      image: $(params.agent-image)
+      imagePullPolicy: $(params.agent-pull-policy)
+      resources:
+        requests:
+          cpu: 50m
+          memory: 100Mi
+        limits:
+          cpu: 100m
+          memory: 200Mi
+      script: |
+        #!/usr/bin/env bash
+        set -Eeuo pipefail
+
+        # Retry helper
+        retry() {
+          local retries=$(params.retry-count)
+          local delay=$(params.retry-delay)
+          local max_delay=$(params.retry-max-delay)
+          local count=0
+          until "$@"; do
+            exit_code=$?
+            count=$((count + 1))
+            if [ "$count" -lt "$retries" ]; then
+              sleep "$delay"
+              delay=$((delay * 2))
+              if [ "$delay" -gt "$max_delay" ]; then delay="$max_delay"; fi
+            else
+              return "$exit_code"
+            fi
+          done
+        }
+
+        mkdir -p $(workspaces.data.path)/logs
+        exec &> >(tee "$(workspaces.data.path)/logs/inspect.log")
+
+        echo "Fetching raw manifest for $(params.image)"
+        fetch_raw() {
+          skopeo inspect --no-tags --raw docker://$(params.image) \
+            --authfile=/tekton/creds/.docker/config.json \
+            > "$(workspaces.data.path)/raw.json"
+        }
+        retry fetch_raw
+
+        echo "Inspecting $(params.image)"
+        fetch_inspect() {
+          skopeo inspect --no-tags docker://$(params.image) \
+            --authfile=/tekton/creds/.docker/config.json \
+            > "$(workspaces.data.path)/image.json"
+        }
+        retry fetch_inspect
+
+        # Multi-arch detection logic
+        name=$(jq -r '.Name' $(workspaces.data.path)/image.json)
+
+        if jq -e "(if .mediaType == \"application/vnd.docker.distribution.manifest.list.v2+json\" or .mediaType == \"application/vnd.oci.image.index.v1+json\" then 1 else null end)" $(workspaces.data.path)/raw.json > /dev/null; then
+          jq -c '.manifests[]' $(workspaces.data.path)/raw.json | while read m; do
+            digest=$(echo "$m" | jq -r '.digest')
+            os=$(echo "$m" | jq -r '.platform.os')
+            arch=$(echo "$m" | jq -r '.platform.architecture')
+            mkdir -p "$(workspaces.data.path)/$os/$arch/logs"
+        
+            fetch_variant() {
+              skopeo --override-os "${os}" --override-arch "${arch}" inspect --no-tags \
+                docker://"${name}@${digest}" \
+                --authfile=/tekton/creds/.docker/config.json \
+                > "$(workspaces.data.path)/$os/$arch/skopeo.json"
+            }
+            retry fetch_variant
+          done
+        elif jq -e "(if .mediaType == \"application/vnd.docker.distribution.manifest.v2+json\" then 1 else null end)" $(workspaces.data.path)/raw.json > /dev/null; then
+            # Single image logic
+            os=$(jq -cr '.Os' $(workspaces.data.path)/image.json)
+            arch=$(jq -cr '.Architecture' $(workspaces.data.path)/image.json)
+            mkdir -p $(workspaces.data.path)/"$os"/"$arch"/logs
+            cp $(workspaces.data.path)/image.json $(workspaces.data.path)/"${os}"/"${arch}"/skopeo.json
+        else
+          echo "Error: Unsupported manifest format"
+          exit 1
+        fi
+      volumeMounts:
+        - mountPath: /shared
+          name: shared
+
+    - name: generate
+      image: $(params.agent-image)
+      imagePullPolicy: $(params.agent-pull-policy)
+      resources:
+        requests:
+          cpu: 500m
+          memory: 1000Mi
+        limits:
+          cpu: 800m
+          memory: 2000Mi
+      env:
+        - name: SYFT_LOG_LEVEL
+          value: "info"
+      script: |
+        #!/usr/bin/env bash
+        set -Eeuo pipefail
+
+        retry() {
+          local retries=$(params.retry-count)
+          local count=0
+          until "$@"; do
+            exit_code=$?
+            count=$((count + 1))
+            if [ "$count" -lt "$retries" ]; then
+              sleep 1
+            else
+              return "$exit_code"
+            fi
+          done
+        }
+
+        # Prepare logging
+        mkdir -p $(workspaces.data.path)/logs
+        exec &> >(tee "$(workspaces.data.path)/logs/generate.log")
+
+        # Generate SBOMs for all architectures found in Step 1
+        for manifest in $(workspaces.data.path)/*/*/skopeo.json; do
+          image=$(jq -r '(.Name + "@" + .Digest)' $manifest)
+          retry syft scan registry:${image} -o cyclonedx-json@1.6=$(dirname "${manifest}")/bom.json
+        done
+
+        # NOTE: Java processing logic (Catalog/Adjust) removed and will be included as part of Enhancers
+
+      volumeMounts:
+        - mountPath: /shared
+          name: shared
+
+    - name: upload
+      image: $(params.agent-image)
+      imagePullPolicy: $(params.agent-pull-policy)
+      env:
+        - name: API_KEY
+          valueFrom:
+            secretKeyRef:
+              name: sbomer-storage-secret
+              key: api-key
+      script: |
+        #!/usr/bin/env bash
+        set -e
+        
+        echo "Preparing files for upload..."
+        cd $(workspaces.data.path)
+        
+        touch curl_args.txt
+        
+        # Handle Main SBOMs
+        # Renames ./linux/amd64/bom.json -> bom-linux-amd64.json
+        find . -name "bom.json" | while read f; do
+           CLEAN_PATH=$(echo "$f" | sed 's|^\./||')
+           DIR=$(dirname "$CLEAN_PATH")
+           VARIANT=$(echo "$DIR" | tr '/' '-')
+        
+           NEW_NAME="bom-${VARIANT}.json"
+           cp "$f" "$NEW_NAME"
+           echo "Staging $NEW_NAME..."
+           echo "-F files=@$NEW_NAME" >> curl_args.txt
+        done
+        
+        # Handle Logs (Upload them, but will filter them out of the result later)
+        if [ -f "logs/generate.log" ]; then
+           echo "Staging logs/generate.log..."
+           echo "-F files=@logs/generate.log" >> curl_args.txt
+        fi
+        
+        CURL_ARGS=$(cat curl_args.txt | tr '\n' ' ')
+        
+        echo "Uploading to $(params.storage-service-url)..."
+        
+        # Capture Full Response
+        RESPONSE=$(curl -s -f -X POST \
+          -H "X-API-Key: $API_KEY" \
+          -H "Content-Type: multipart/form-data" \
+          $CURL_ARGS \
+          "$(params.storage-service-url)/api/v1/storage/generations/$(params.generation-id)")
+        
+        echo "Full Response:"
+        echo "$RESPONSE" | jq .
+        
+        # Filter Output
+        # We use jq to delete any key that contains ".log"
+        # This ensures sbom-service only receives the SBOM URLs.
+        CLEAN_RESPONSE=$(echo "$RESPONSE" | jq 'with_entries(select(.key | contains(".log") | not))')
+        
+        echo "Filtered Response (Task Result):"
+        echo "$CLEAN_RESPONSE"
+        
+        echo -n "$CLEAN_RESPONSE" > $(results.sbom-url.path)
+  workspaces:
+    - name: data
+      description: Workspace used to store the generated SBOMs
+  volumes:
+    - name: shared
+      emptyDir: {}

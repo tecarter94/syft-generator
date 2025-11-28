@@ -50,7 +50,7 @@ services:
       test: ["CMD-SHELL", "curl -f http://localhost:8080/apis/registry/v2 || exit 1"]
       interval: 10s
       timeout: 5s
-      retries: 5
+      retries: 10
     networks:
       - sbomer
 
@@ -69,11 +69,8 @@ services:
     networks:
       - sbomer
 
-
   manifest-storage-service:
-    build:
-      context: ../.
-      dockerfile: src/main/docker/Dockerfile.jvm
+    image: "quay.io/sbomer/manifest-storage-service:latest"
     ports:
       - "8085:8080"
     depends_on:
@@ -84,6 +81,26 @@ services:
     environment:
       KAFKA_BOOTSTRAP_SERVERS: kafka:9092
       SCHEMA_REGISTRY_URL: http://schema-registry:8080/apis/registry/v2
+    networks:
+      - sbomer
+
+  syft-generator:
+    build:
+      context: ../.
+      dockerfile: src/main/docker/Dockerfile.jvm
+    depends_on:
+      kafka:
+        condition: service_healthy
+      schema-registry:
+        condition: service_healthy
+    environment:
+      KAFKA_BOOTSTRAP_SERVERS: kafka:9092
+      SCHEMA_REGISTRY_URL: http://schema-registry:8080/apis/registry/v2
+      QUARKUS_KUBERNETES_CLIENT_MASTER_URL: http://host.containers.internal:8001
+      QUARKUS_KUBERNETES_CLIENT_TRUST_CERTS: "true"
+      # This maps the shell variable SBOMER_STORAGE_URL to the Quarkus property.
+      # This is needed because it will pass the gateway IP so TaskRuns can communicate outside of Minikube
+      SBOMER_STORAGE_URL: ${SBOMER_STORAGE_URL}
     networks:
       - sbomer
 
