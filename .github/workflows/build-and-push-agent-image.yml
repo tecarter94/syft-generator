@@ -36,9 +36,6 @@ jobs:
           distribution: 'temurin'
           cache: 'maven'
 
-      - name: Build with Maven
-        run: mvn clean package -Dquarkus.profile=prod
-
       - name: Build Image
         id: build-image
         uses: redhat-actions/buildah-build@v2
