@@ -1,6 +1,6 @@
 apiVersion: v2
-name: syft-generator
-description: A Helm chart for Kubernetes
+name: syft-generator-chart
+description: A Helm chart for the Syft Generator component of SBOMer
 
 # A chart can be either an 'application' or a 'library' chart.
 #

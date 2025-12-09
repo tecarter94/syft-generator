@@ -8,7 +8,8 @@ env:
   REGISTRY: quay.io
   AGENT_IMAGE: sbomer/syft-agent
   GENERATOR_IMAGE: sbomer/syft-generator
-  HELM_REPO: oci://quay.io/sbomer/helm
+  HELM_CHART: syft-generator-chart
+  HELM_REPO: oci://quay.io/sbomer
 
 jobs:
   build-agent:
@@ -17,6 +18,7 @@ jobs:
     permissions:
       contents: read
       packages: write
+      id-token: write
     outputs:
       image: "${{ env.REGISTRY }}/${{ env.AGENT_IMAGE }}"
       digest: ${{ steps.push.outputs.digest }}
@@ -34,7 +36,6 @@ jobs:
         with:
           image: ${{ env.AGENT_IMAGE }}
           tags: latest ${{ steps.sha.outputs.sha }}
-          # Context root so we can access cli/target
           context: .
           containerfiles: |
             ./podman/syft-agent/Containerfile
@@ -48,6 +49,18 @@ jobs:
           registry: ${{ env.REGISTRY }}
           username: ${{ secrets.QUAY_USERNAME }}
           password: ${{ secrets.QUAY_TOKEN }}
+
+      - name: Install Cosign
+        uses: sigstore/cosign-installer@v3.8.1
+
+      - name: Login to Quay (Cosign)
+        run: echo "${{ secrets.QUAY_TOKEN }}" | cosign login quay.io --username "${{ secrets.QUAY_USERNAME }}" --password-stdin
+
+      - name: Sign the images with Cosign
+        run: |
+          IMAGE_URI="${{ env.REGISTRY }}/${{ env.AGENT_IMAGE }}@${{ steps.push.outputs.digest }}"
+          echo "Signing $IMAGE_URI"
+          cosign sign -y -a "repo=${{ github.repository }}" -a "workflow=${{ github.workflow }}" -a "sha=${{ github.sha }}" "$IMAGE_URI"
 
   provenance-agent:
     needs: [build-agent]
@@ -63,15 +76,13 @@ jobs:
       registry-username: ${{ secrets.QUAY_USERNAME }}
       registry-password: ${{ secrets.QUAY_TOKEN }}
 
-  # =========================================================
-  # JOB 2: Build Syft Generator Image (Quarkus App)
-  # =========================================================
   build-generator:
     name: Build Generator
     runs-on: ubuntu-22.04
     permissions:
       contents: read
       packages: write
+      id-token: write
     outputs:
       image: "${{ env.REGISTRY }}/${{ env.GENERATOR_IMAGE }}"
       digest: ${{ steps.push.outputs.digest }}
@@ -119,6 +130,18 @@ jobs:
           username: ${{ secrets.QUAY_USERNAME }}
           password: ${{ secrets.QUAY_TOKEN }}
 
+      - name: Install Cosign
+        uses: sigstore/cosign-installer@v3.8.1
+
+      - name: Login to Quay (Cosign)
+        run: echo "${{ secrets.QUAY_TOKEN }}" | cosign login quay.io --username "${{ secrets.QUAY_USERNAME }}" --password-stdin
+
+      - name: Sign the images with Cosign
+        run: |
+          IMAGE_URI="${{ env.REGISTRY }}/${{ env.GENERATOR_IMAGE }}@${{ steps.push.outputs.digest }}"
+          echo "Signing $IMAGE_URI"
+          cosign sign -y -a "repo=${{ github.repository }}" -a "workflow=${{ github.workflow }}" -a "sha=${{ github.sha }}" "$IMAGE_URI"
+
   provenance-generator:
     needs: [build-generator]
     permissions:
@@ -136,7 +159,6 @@ jobs:
   publish-chart:
     name: Publish Helm Chart
     runs-on: ubuntu-22.04
-    # The Magic Glue: Wait for both image pipelines to finish securely
     needs: [provenance-agent, provenance-generator]
 
     permissions:
@@ -162,9 +184,9 @@ jobs:
       - name: Package Helm Chart
         run: |
           # Use Run Number for SemVer (0.1.x)
-          # Use Git SHA for AppVersion (matches the images we just built!)
+          # Use Git SHA for AppVersion (matches the images we just built)
           
-          helm package helm/syft-generator \
+          helm package helm/${{ env.HELM_CHART }} \
             --destination . \
             --version "0.1.${{ github.run_number }}" \
             --app-version "${{ steps.sha.outputs.sha }}"
@@ -173,7 +195,7 @@ jobs:
         run: echo "${{ secrets.QUAY_TOKEN }}" | helm registry login quay.io --username "${{ secrets.QUAY_USERNAME }}" --password-stdin
 
       - name: Push Chart
-        run: helm push syft-generator-*.tgz ${{ env.HELM_REPO }}
+        run: helm push ${{ env.HELM_CHART }}-*.tgz ${{ env.HELM_REPO }}
 
       - name: Login to Quay (Cosign)
         run: echo "${{ secrets.QUAY_TOKEN }}" | cosign login quay.io --username "${{ secrets.QUAY_USERNAME }}" --password-stdin
@@ -181,7 +203,7 @@ jobs:
       - name: Sign Helm Chart
         run: |
           # Construct the full URI to the chart we just pushed
-          CHART_URI="${{ env.HELM_REPO }}/syft-generator:0.1.${{ github.run_number }}"
+          CHART_URI="${{ env.HELM_REPO }}/${{ env.HELM_CHART }}:0.1.${{ github.run_number }}"
           
           echo "Signing $CHART_URI ..."
-          cosign sign -y "$CHART_URI"
+          cosign sign -y -a "repo=${{ github.repository }}" -a "workflow=${{ github.workflow }}" -a "sha=${{ github.sha }}" "$CHART_URI"
