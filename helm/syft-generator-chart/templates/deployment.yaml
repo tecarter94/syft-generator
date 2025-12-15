@@ -72,6 +72,17 @@ spec:
               valueFrom:
                 fieldRef:
                   fieldPath: metadata.namespace
+
+            # Needed for cluster deployment
+            {{- if .Values.config.quarkus.kubernetesClientMasterUrl }}
+            - name: QUARKUS_KUBERNETES_CLIENT_MASTER_URL
+              value: {{ .Values.config.quarkus.kubernetesClientMasterUrl | quote }}
+            {{- end }}
+            
+            {{- if .Values.config.quarkus.trustCerts }}
+            - name: QUARKUS_KUBERNETES_CLIENT_TRUST_CERTS
+              value: {{ .Values.config.quarkus.trustCerts | quote }}
+            {{- end }}
           # ---------------------------------------------------------
           {{- with .Values.livenessProbe }}
           livenessProbe:
