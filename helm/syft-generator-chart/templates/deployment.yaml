@@ -97,6 +97,10 @@ spec:
             - name: QUARKUS_KUBERNETES_CLIENT_TRUST_CERTS
               value: {{ .Values.config.quarkus.trustCerts | quote }}
             {{- end }}
+
+            {{- with .Values.extraEnv }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
           # ---------------------------------------------------------
           {{- with .Values.livenessProbe }}
           livenessProbe:
