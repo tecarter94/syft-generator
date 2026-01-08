@@ -5,7 +5,7 @@
 set -e
 
 # Configuration
-API_URL="${1:-http://localhost:8083}"
+API_URL="${1:-http://localhost:8080}"
 IMAGE="${2:-quay.io/pct-security/mequal:latest}"
 ENDPOINT="${API_URL}/api/v1/generations"
 

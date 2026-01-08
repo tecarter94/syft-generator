@@ -57,58 +57,31 @@ The generated SBOMs are uploaded directly from the TaskRun pod to the [Manifest 
 
 ## Development Environment Setup
 
-This component runs in a **Hybrid Environment**: the Service runs in Podman (or locally), while the actual generation work (TaskRuns) executes inside a Minikube cluster.
+We can run this component in a **Minikube Environment** by injecting it as part of the sbomer-platform helm chart and installing it into our cluster.
 
 We provide helper scripts in the `hack/` directory to automate the networking and configuration between these two environments.
 
 ### 1. Prerequisites
-* **Podman** (with `podman-compose`)
+* **Podman**
 * **Minikube**
-* **Helm** (Required to render the Task templates)
+* **Helm**
 * **Maven** & **Java 17+**
 * **Kubectl**
 
 ### 2. Prepare the Cluster
-First, ensure you have the `sbomer` Minikube profile running with Tekton installed. We have a dedicated repository and script for this infrastructure.
+First, we need to ensure we have the `sbomer` Minikube profile running with Tekton installed. 
+
+To do this we have a dedicated repository and script:
 
 ```bash
-# Clone the infra repo and run setup-minikube.sh
 ./hack/setup-local-dev.sh
 ```
-Running this script will at the end expose the minikube cluster at port 8081, please don't close the terminal to maintain this connection.
+Running this script will prepare the minikube cluster with `sbomer` profile and Tekton installed.
 
-### 3. Run the Service
-Use the `./hack/run-compose-with-local-build.sh` script to start the system. This script performs several critical configuration steps:
+### 3. Run the Component with Helm in Minikube
+Use the `./hack/run-helm-with-local-build.sh` script to start the system. This script performs several critical steps:
 
-- Detects the Minikube Gateway IP (to allow Pods to talk back to your Host).
-- Builds the syft-agent image locally and pushes it into the Minikube registry.
-- Renders the Helm Chart Task template using local values (localhost image, Never pull policy) to push the Syft generation Task yaml to minikube.
-- Builds the syft-generator component itself and uses it in the podman-compose
-
-### 4. Apply individual components to the system after updating them
-
-#### syft-generator (all-in-one, applies changes also to syfy-agent and tekton task)
-
-If changes are made to the syft-generator component in general, just rerun the script below:
-
-```bash
-./hack/run-compose-with-local-build.sh
-```
-
-
-#### syft-agent
-
-If changes to the `tekton/syft-generation-task.yaml` is made, to apply it to Minikube, run the script below:
-
-```bash
-./hack/apply-local-syft-generator-task-to-minikube.sh
-```
-
-#### Tekton Task for Syft generation
-
-The Tekton Task also requires a specific container image (syft-agent) containing the Syft tool. Since we are running locally, we must build this image and sideload it directly into the Minikube cache so Kubernetes can find it without pulling from a registry.
-
-```bash
-./hack/build-local-syft-agent-into-minikube.sh
-```
-Note: Run this whenever you modify the Dockerfile or the internal scripts in podman/syft-agent.
+- Clones sbomer-platform to component repo
+- Builds component images (syft-generator, syft-agent) and puts them into minikube
+- Injects the locally built component values to sbomer-platform helm chart
+- Installs the sbomer-platform helm chart with our locally built component
