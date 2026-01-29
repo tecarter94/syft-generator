@@ -46,7 +46,7 @@ app.kubernetes.io/managed-by: {{ .Release.Service }}
 Selector labels
 */}}
 {{- define "syft-generator-chart.selectorLabels" -}}
-app.kubernetes.io/name: {{ include "syft-generator-chart.name" . }}
+app.kubernetes.io/name: sbomer-syft-generator
 app.kubernetes.io/instance: {{ .Release.Name }}
 {{- end }}
 
