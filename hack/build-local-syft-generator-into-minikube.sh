@@ -10,7 +10,7 @@ TAR_FILE="syft-generator.tar"
 
 echo "--- Building and inserting syft-generator image into Minikube registry ---"
 
-bash ./hack/build-with-schemas.sh
+bash ./hack/build-with-schemas.sh prod
 
 podman build --format docker -t "$SYFT_GENERATOR_IMAGE" -f src/main/docker/Dockerfile.jvm .
 
