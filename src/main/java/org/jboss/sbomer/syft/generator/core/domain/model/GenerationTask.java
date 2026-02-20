@@ -10,9 +10,10 @@ public record GenerationTask(
     String generationId,
     GenerationRequestSpec spec,
     int retryCount, // NOT max retries, the number of it retries it's currently on
-    String memoryOverride // i.e. 2Gi
+    String memoryOverride, // i.e. 2Gi
+    String traceParent // W3C traceparent header (00-<traceId>-<spanId>-<traceFlags>)
 ) {
-    public GenerationTask(String generationId, GenerationRequestSpec spec) {
-        this(generationId, spec, 0, null);
+    public GenerationTask(String generationId, GenerationRequestSpec spec, String traceParent) {
+        this(generationId, spec, 0, null, traceParent);
     }
 }

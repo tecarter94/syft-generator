@@ -28,10 +28,29 @@ spec:
     - name: retry-max-delay
       type: string
       default: "60"
+    - name: trace-parent
+      type: string
+      default: ""
+      description: "W3C traceparent header for tracing"
   steps:
     - name: inspect
       image: "{{ .Values.task.agent.image }}:{{ .Values.task.agent.tag | default .Chart.AppVersion }}"
       imagePullPolicy: {{ .Values.task.agent.pullPolicy }}
+      env:
+        - name: TRACEPARENT
+          value: "$(params.trace-parent)"
+        - name: OTEL_EXPORTER_OTLP_ENDPOINT
+          value: "{{ .Values.task.otel.endpoint }}"
+        - name: OTEL_SERVICE_NAME
+          value: "sbomer-syft-generator-taskrun"
+        - name: OTEL_SERVICE_VERSION
+          value: "{{ .Values.task.agent.tag | default .Chart.AppVersion }}"
+        - name: RETRY_COUNT
+          value: "$(params.retry-count)"
+        - name: RETRY_DELAY
+          value: "$(params.retry-delay)"
+        - name: RETRY_MAX_DELAY
+          value: "$(params.retry-max-delay)"
       resources:
         requests:
           cpu: 50m
@@ -42,28 +61,13 @@ spec:
       script: |
         #!/usr/bin/env bash
         set -Eeuo pipefail
+        source /opt/otel/otel-helpers.sh
 
-        # Retry helper
-        retry() {
-          local retries=$(params.retry-count)
-          local delay=$(params.retry-delay)
-          local max_delay=$(params.retry-max-delay)
-          local count=0
-          until "$@"; do
-            exit_code=$?
-            count=$((count + 1))
-            if [ "$count" -lt "$retries" ]; then
-              sleep "$delay"
-              delay=$((delay * 2))
-              if [ "$delay" -gt "$max_delay" ]; then delay="$max_delay"; fi
-            else
-              return "$exit_code"
-            fi
-          done
-        }
+        otel_start_span "inspect" image="$(params.image)" generation.id="$(params.generation-id)"
+        trap 'otel_end_span $?' EXIT
 
         mkdir -p $(workspaces.data.path)/logs
-        exec &> >(tee "$(workspaces.data.path)/logs/inspect.log")
+        otel_tee "$(workspaces.data.path)/logs/inspect.log"
 
         echo "Fetching raw manifest for $(params.image)"
         fetch_raw() {
@@ -71,7 +75,7 @@ spec:
             --authfile=/tekton/creds/.docker/config.json \
             > "$(workspaces.data.path)/raw.json"
         }
-        retry fetch_raw
+        retry "skopeo-inspect-raw" fetch_raw
 
         echo "Inspecting $(params.image)"
         fetch_inspect() {
@@ -79,7 +83,7 @@ spec:
             --authfile=/tekton/creds/.docker/config.json \
             > "$(workspaces.data.path)/image.json"
         }
-        retry fetch_inspect
+        retry "skopeo-inspect" fetch_inspect
 
         # Multi-arch detection logic
         name=$(jq -r '.Name' $(workspaces.data.path)/image.json)
@@ -90,14 +94,14 @@ spec:
             os=$(echo "$m" | jq -r '.platform.os')
             arch=$(echo "$m" | jq -r '.platform.architecture')
             mkdir -p "$(workspaces.data.path)/$os/$arch/logs"
-        
+
             fetch_variant() {
               skopeo --override-os "${os}" --override-arch "${arch}" inspect --no-tags \
                 docker://"${name}@${digest}" \
                 --authfile=/tekton/creds/.docker/config.json \
                 > "$(workspaces.data.path)/$os/$arch/skopeo.json"
             }
-            retry fetch_variant
+            retry "skopeo-inspect-${os}-${arch}" fetch_variant
           done
         elif jq -e "(if .mediaType == \"application/vnd.docker.distribution.manifest.v2+json\" then 1 else null end)" $(workspaces.data.path)/raw.json > /dev/null; then
             # Single image logic
@@ -109,9 +113,14 @@ spec:
           echo "Error: Unsupported manifest format"
           exit 1
         fi
+
+        arch_count=$(find $(workspaces.data.path) -name skopeo.json | wc -l)
+        otel_gauge "sbomer.syft.generator.taskrun.architectures" "$arch_count"
       volumeMounts:
         - mountPath: /shared
           name: shared
+        - mountPath: /opt/otel
+          name: otel-helpers
 
     - name: generate
       image: "{{ .Values.task.agent.image }}:{{ .Values.task.agent.tag | default .Chart.AppVersion }}"
@@ -124,34 +133,43 @@ spec:
           cpu: 800m
           memory: 2000Mi
       env:
+        - name: TRACEPARENT
+          value: "$(params.trace-parent)"
+        - name: OTEL_EXPORTER_OTLP_ENDPOINT
+          value: "{{ .Values.task.otel.endpoint }}"
+        - name: OTEL_SERVICE_NAME
+          value: "sbomer-syft-generator-taskrun"
+        - name: OTEL_SERVICE_VERSION
+          value: "{{ .Values.task.agent.tag | default .Chart.AppVersion }}"
+        - name: RETRY_COUNT
+          value: "$(params.retry-count)"
+        - name: RETRY_DELAY
+          value: "$(params.retry-delay)"
+        - name: RETRY_MAX_DELAY
+          value: "$(params.retry-max-delay)"
         - name: SYFT_LOG_LEVEL
           value: "info"
       script: |
         #!/usr/bin/env bash
         set -Eeuo pipefail
+        source /opt/otel/otel-helpers.sh
 
-        retry() {
-          local retries=$(params.retry-count)
-          local count=0
-          until "$@"; do
-            exit_code=$?
-            count=$((count + 1))
-            if [ "$count" -lt "$retries" ]; then
-              sleep 1
-            else
-              return "$exit_code"
-            fi
-          done
-        }
+        otel_start_span "generate" image="$(params.image)" generation.id="$(params.generation-id)"
+        trap 'otel_end_span $?' EXIT
 
         # Prepare logging
         mkdir -p $(workspaces.data.path)/logs
-        exec &> >(tee "$(workspaces.data.path)/logs/generate.log")
+        otel_tee "$(workspaces.data.path)/logs/generate.log"
 
         # Generate SBOMs for all architectures found in Step 1
         for manifest in $(workspaces.data.path)/*/*/skopeo.json; do
           image=$(jq -r '(.Name + "@" + .Digest)' $manifest)
-          retry syft scan registry:${image} -o cyclonedx-json@1.6=$(dirname "${manifest}")/bom.json
+          dir=$(dirname "${manifest}")
+          arch=$(basename "$dir")
+          os=$(basename "$(dirname "$dir")")
+          retry "syft-scan-${os}-${arch}" syft scan registry:${image} -o cyclonedx-json@1.6=${dir}/bom.json
+          otel_gauge "sbomer.taskrun.sbom.size_bytes" "$(stat -c%s "${dir}/bom.json")"
+          otel_gauge "sbomer.taskrun.sbom.components" "$(jq '.components | length' "${dir}/bom.json")"
         done
 
         # NOTE: Java processing logic (Catalog/Adjust) removed and will be included as part of Enhancers
@@ -159,63 +177,94 @@ spec:
       volumeMounts:
         - mountPath: /shared
           name: shared
+        - mountPath: /opt/otel
+          name: otel-helpers
 
     - name: upload
       image: "{{ .Values.task.agent.image }}:{{ .Values.task.agent.tag | default .Chart.AppVersion }}"
       imagePullPolicy: {{ .Values.task.agent.pullPolicy }}
+      env:
+        - name: TRACEPARENT
+          value: "$(params.trace-parent)"
+        - name: OTEL_EXPORTER_OTLP_ENDPOINT
+          value: "{{ .Values.task.otel.endpoint }}"
+        - name: OTEL_SERVICE_NAME
+          value: "sbomer-syft-generator-taskrun"
+        - name: OTEL_SERVICE_VERSION
+          value: "{{ .Values.task.agent.tag | default .Chart.AppVersion }}"
       script: |
         #!/usr/bin/env bash
         set -e
-        
+        source /opt/otel/otel-helpers.sh
+
+        otel_start_span "upload" generation.id="$(params.generation-id)" storage.url="$(params.storage-service-url)"
+        trap 'otel_end_span $?' EXIT
+
+        mkdir -p $(workspaces.data.path)/logs
+        otel_tee "$(workspaces.data.path)/logs/upload.log"
+
         echo "Preparing files for upload..."
         cd $(workspaces.data.path)
-        
+
         touch curl_args.txt
-        
+
         # Handle Main SBOMs
         # Renames ./linux/amd64/bom.json -> bom-linux-amd64.json
         find . -name "bom.json" | while read f; do
            CLEAN_PATH=$(echo "$f" | sed 's|^\./||')
            DIR=$(dirname "$CLEAN_PATH")
            VARIANT=$(echo "$DIR" | tr '/' '-')
-        
+
            NEW_NAME="bom-${VARIANT}.json"
            cp "$f" "$NEW_NAME"
            echo "Staging $NEW_NAME..."
            echo "-F files=@$NEW_NAME" >> curl_args.txt
         done
-        
+
         # Handle Logs (Upload them, but will filter them out of the result later)
         if [ -f "logs/generate.log" ]; then
            echo "Staging logs/generate.log..."
            echo "-F files=@logs/generate.log" >> curl_args.txt
         fi
-        
+
         CURL_ARGS=$(cat curl_args.txt | tr '\n' ' ')
-        
+
         echo "Uploading to $(params.storage-service-url)..."
-        
+
         # Capture Full Response
-        RESPONSE=$(curl -s -f -X POST \
-          -H "Content-Type: multipart/form-data" \
-          $CURL_ARGS \
-          "$(params.storage-service-url)/api/v1/storage/generations/$(params.generation-id)")
-        
+        upload_files() {
+          RESPONSE=$(curl -s -f -X POST \
+            -H "Content-Type: multipart/form-data" \
+            -H "traceparent: $TRACEPARENT" \
+            $CURL_ARGS \
+            "$(params.storage-service-url)/api/v1/storage/generations/$(params.generation-id)")
+        }
+        otel_trace "curl-upload" upload_files
+
+        otel_gauge "sbomer.taskrun.upload.files" "$(echo "$RESPONSE" | jq 'length')"
+        otel_gauge "sbomer.taskrun.upload.total_bytes" "$(sed 's/-F files=@//' curl_args.txt | xargs stat -c%s | awk '{s+=$1} END{print s}')"
+
         echo "Full Response:"
         echo "$RESPONSE" | jq .
-        
+
         # Filter Output
         # We use jq to delete any key that contains ".log"
         # This ensures sbom-service only receives the SBOM URLs.
         CLEAN_RESPONSE=$(echo "$RESPONSE" | jq 'with_entries(select(.key | contains(".log") | not))')
-        
+
         echo "Filtered Response (Task Result):"
         echo "$CLEAN_RESPONSE"
-        
+
         echo -n "$CLEAN_RESPONSE" > $(results.sbom-url.path)
+      volumeMounts:
+        - mountPath: /opt/otel
+          name: otel-helpers
   workspaces:
     - name: data
       description: Workspace used to store the generated SBOMs
   volumes:
     - name: shared
       emptyDir: {}
+    - name: otel-helpers
+      configMap:
+        name: {{ .Release.Name }}-otel-helpers

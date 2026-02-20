@@ -33,6 +33,8 @@ public class TaskRunFactory {
     private static final String LABEL_GENERATION_ID = "sbomer.jboss.org/generation-id";
     private static final String LABEL_GENERATOR_TYPE = "sbomer.jboss.org/generator-type";
     private static final String GENERATOR_TYPE_VALUE = "syft";
+    private static final String ANNOTATION_RETRY_COUNT = "sbomer.jboss.org/retry-count";
+    private static final String ANNOTATION_TRACEPARENT = "sbomer.jboss.org/traceparent";
 
     public TaskRun createTaskRun(GenerationTask generationTask) {
         String generationId = generationTask.generationId();
@@ -43,6 +45,9 @@ public class TaskRunFactory {
         params.add(new ParamBuilder().withName("image").withNewValue(request.getTarget().getIdentifier()).build());
         params.add(new ParamBuilder().withName("generation-id").withNewValue(generationId).build());
         params.add(new ParamBuilder().withName("storage-service-url").withNewValue(storageUrl).build());
+        if (generationTask.traceParent() != null) {
+            params.add(new ParamBuilder().withName("trace-parent").withNewValue(generationTask.traceParent()).build());
+        }
 
         // 2. Prepare Labels
         Map<String, String> labels = Map.of(
@@ -79,12 +84,19 @@ public class TaskRunFactory {
             );
         }
 
-        // 5. Combine into Final TaskRun
+        // 5. Build annotations map
+        Map<String, String> annotations = new java.util.HashMap<>();
+        annotations.put(ANNOTATION_RETRY_COUNT, String.valueOf(generationTask.retryCount()));
+        if (generationTask.traceParent() != null) {
+            annotations.put(ANNOTATION_TRACEPARENT, generationTask.traceParent());
+        }
+
+        // 6. Combine into Final TaskRun
         return new TaskRunBuilder()
                 .withNewMetadata()
                 .withGenerateName("syft-gen-" + shortenId(generationId) + "-")
                 .withLabels(labels)
-                .addToAnnotations("sbomer.jboss.org/retry-count", String.valueOf(generationTask.retryCount()))
+                .withAnnotations(annotations)
                 .endMetadata()
                 .withSpec(specBuilder.build()) // Attach the separately built spec
                 .build();

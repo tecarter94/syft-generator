@@ -7,6 +7,8 @@ import org.jboss.sbomer.syft.generator.core.service.TaskRunFactory;
 
 import io.fabric8.kubernetes.client.KubernetesClient;
 import io.fabric8.tekton.v1beta1.TaskRun;
+import io.opentelemetry.instrumentation.annotations.SpanAttribute;
+import io.opentelemetry.instrumentation.annotations.WithSpan;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import lombok.extern.slf4j.Slf4j;
@@ -28,6 +30,7 @@ public class TektonGenerationExecutor implements GenerationExecutor {
     private static final String GENERATOR_TYPE_LABEL = "sbomer.jboss.org/generator-type";
     private static final String GENERATOR_TYPE_VALUE = "syft";
 
+    @WithSpan
     @Override
     public void scheduleGeneration(GenerationTask generationTask) {
         log.info("Scheduling TaskRun for generation: {}", generationTask.generationId());
@@ -39,8 +42,9 @@ public class TektonGenerationExecutor implements GenerationExecutor {
         kubernetesClient.resources(TaskRun.class).inNamespace(namespace).resource(taskRun).create();
     }
 
+    @WithSpan
     @Override
-    public void abortGeneration(String generationId) {
+    public void abortGeneration(@SpanAttribute("generation.id") String generationId) {
         log.info("Aborting generation: {}", generationId);
         kubernetesClient.resources(TaskRun.class)
                 .inNamespace(namespace)
@@ -49,8 +53,9 @@ public class TektonGenerationExecutor implements GenerationExecutor {
     }
 
     // In this specific implementation, basically same logic as abortGeneration
+    @WithSpan
     @Override
-    public void cleanupGeneration(String generationId) {
+    public void cleanupGeneration(@SpanAttribute("generation.id") String generationId) {
         log.info("Cleaning up generation: {}", generationId);
         kubernetesClient.resources(TaskRun.class)
                 .inNamespace(namespace)

@@ -23,8 +23,9 @@ public interface GenerationOrchestrator {
      *
      * @param generationId The unique ID of the generation.
      * @param request      The payload describing what to generate.
+     * @param traceParent  W3C traceparent header (00-<traceId>-<spanId>-<traceFlags>) captured from inbound Kafka span.
      */
-    void acceptRequest(String generationId, GenerationRequestSpec request);
+    void acceptRequest(String generationId, GenerationRequestSpec request, String traceParent);
 
     /**
      * Feedback Point: Processes a status update from the execution environment

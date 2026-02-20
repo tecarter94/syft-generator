@@ -45,7 +45,7 @@ class GeneratorServiceTest {
         GenerationRequestSpec spec = createDummySpec();
 
         // Queue the request
-        generatorService.acceptRequest(genId, spec);
+        generatorService.acceptRequest(genId, spec, null);
 
         // Trigger the scheduler manually
         generatorService.processQueue();
@@ -65,7 +65,7 @@ class GeneratorServiceTest {
         Mockito.when(executor.countActiveExecutions()).thenReturn(20);
 
         // Queue a request
-        generatorService.acceptRequest("G999", createDummySpec());
+        generatorService.acceptRequest("G999", createDummySpec(), null);
 
         // Trigger scheduler
         generatorService.processQueue();
@@ -82,7 +82,7 @@ class GeneratorServiceTest {
         GenerationRequestSpec spec = createDummySpec();
 
         // Put it in the active map by "scheduling" it first
-        generatorService.acceptRequest(genId, spec);
+        generatorService.acceptRequest(genId, spec, null);
         generatorService.processQueue(); // Now it is "Active"
 
         // Reset mocks to clear the initial interactions

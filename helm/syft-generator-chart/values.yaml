@@ -47,6 +47,9 @@ rbac:
 # --- APPLICATION CONFIG ---
 config:
   logLevel: INFO
+  otel:
+    protocol: grpc
+    endpoint: "" # placeholder
   maxConcurrent: 20
   oomRetries: 3
   # Default internal cluster URL for storage
@@ -67,6 +70,8 @@ config:
 # --- TEKTON TASK CONFIG ---
 task:
   name: generator-syft
+  otel:
+    endpoint: "" # HTTP only
   # The "Agent" image used inside the TaskRun
   agent:
     image: quay.io/sbomer/syft-agent

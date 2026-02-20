@@ -15,7 +15,14 @@ import org.jboss.sbomer.syft.generator.core.port.spi.FailureNotifier;
 import org.jboss.sbomer.syft.generator.core.port.spi.GenerationExecutor;
 import org.jboss.sbomer.syft.generator.core.port.spi.StatusNotifier;
 import org.jboss.sbomer.syft.generator.core.utility.FailureUtility;
+import org.jboss.sbomer.syft.generator.core.utility.TraceUtility;
 
+import io.opentelemetry.api.trace.Span;
+import io.opentelemetry.api.trace.StatusCode;
+import io.opentelemetry.api.trace.Tracer;
+import io.opentelemetry.context.Scope;
+import io.opentelemetry.instrumentation.annotations.SpanAttribute;
+import io.opentelemetry.instrumentation.annotations.WithSpan;
 import io.quarkus.scheduler.Scheduled;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
@@ -33,6 +40,9 @@ public class GeneratorService implements GenerationOrchestrator {
 
     @Inject
     FailureNotifier failureNotifier;
+
+    @Inject
+    Tracer tracer;
 
     @ConfigProperty(name = "sbomer.generator.max-concurrent", defaultValue = "20")
     int maxConcurrent;
@@ -54,14 +64,15 @@ public class GeneratorService implements GenerationOrchestrator {
     private final Map<String, GenerationTask> activeTasks = new ConcurrentHashMap<>();
 
     @Override
-    public void acceptRequest(String generationId, GenerationRequestSpec request) {
+    public void acceptRequest(String generationId, GenerationRequestSpec request, String traceParent) {
         log.info("Accepted request for generation: {}", generationId);
         // We don't execute immediately, we queue it to respect the throttling limit
-        pendingQueue.add(new GenerationTask(generationId, request));
+        pendingQueue.add(new GenerationTask(generationId, request, traceParent));
     }
 
+    @WithSpan
     @Override
-    public void handleUpdate(String generationId, GenerationStatus status, String reason, List<String> resultUrls) {
+    public void handleUpdate(@SpanAttribute("generation.id") String generationId, GenerationStatus status, String reason, List<String> resultUrls) {
         log.info("Handling update for generation {}: {}", generationId, status);
 
         // If we hit OOM, we retry with more resources
@@ -100,24 +111,37 @@ public class GeneratorService implements GenerationOrchestrator {
                 break;
             }
 
-            try {
-                // Put into active tasks
-                activeTasks.put(task.generationId(), task);
+            // Create child span under original Kafka consumer trace so outgoing
+            // Kafka messages (notifyStatus) carry trace context
+            Span span = TraceUtility.childSpanBuilder(tracer,"GeneratorService.processQueue", task.traceParent(), task.generationId())
+                    .setAttribute("target.image", task.spec().getTarget().getIdentifier())
+                    .setAttribute("retry.count", task.retryCount())
+                    .setAttribute("memory.override", task.memoryOverride() != null ? task.memoryOverride() : defaultMemory)
+                    .startSpan();
+            try (Scope ignored = span.makeCurrent()) {
+                try {
+                    // Put into active tasks
+                    activeTasks.put(task.generationId(), task);
 
-                executor.scheduleGeneration(task);
+                    executor.scheduleGeneration(task);
 
-                // Send an event out to declare it has started generating
-                notifier.notifyStatus(
-                        task.generationId(),
-                        GenerationStatus.GENERATING,
-                        "Scheduled in execution environment",
-                        null
-                );
+                    // Send an event out to declare it has started generating
+                    notifier.notifyStatus(
+                            task.generationId(),
+                            GenerationStatus.GENERATING,
+                            "Scheduled in execution environment",
+                            null
+                    );
 
-            } catch (Exception e) {
-                log.error("Failed to schedule generation {}", task.generationId(), e);
-                notifier.notifyStatus(task.generationId(), GenerationStatus.FAILED, e.getMessage(), null);
-                failureNotifier.notify(FailureUtility.buildFailureSpecFromException(e), task.generationId(), null);
+                } catch (Exception e) {
+                    log.error("Failed to schedule generation {}", task.generationId(), e);
+                    span.recordException(e);
+                    span.setStatus(StatusCode.ERROR, e.getMessage());
+                    notifier.notifyStatus(task.generationId(), GenerationStatus.FAILED, e.getMessage(), null);
+                    failureNotifier.notify(FailureUtility.buildFailureSpecFromException(e), task.generationId(), null);
+                }
+            } finally {
+                span.end();
             }
         }
     }
@@ -146,12 +170,13 @@ public class GeneratorService implements GenerationOrchestrator {
         log.info("Retrying {} due to OOM. Attempt {}/{}. Increasing memory: {} -> {}",
                 generationId, task.retryCount() + 1, maxOomRetries, currentMemory, newMemory);
 
-        // Create new task with incremented count and new memory
+        // Create new task with incremented count and new memory, preserving trace field
         GenerationTask retryTask = new GenerationTask(
                 task.generationId(),
                 task.spec(),
                 task.retryCount() + 1,
-                newMemory
+                newMemory,
+                task.traceParent()
         );
 
         // Update state and re-queue

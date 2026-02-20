@@ -49,6 +49,14 @@ spec:
             - name: QUARKUS_LOG_LEVEL
               value: {{ .Values.config.logLevel | quote }}
 
+            # Observability
+            - name: QUARKUS_OTEL_EXPORTER_OTLP_ENDPOINT
+              value: {{ .Values.config.otel.endpoint }}
+            - name: QUARKUS_OTEL_EXPORTER_OTLP_PROTOCOL
+              value: {{ .Values.config.otel.protocol }}
+            - name: QUARKUS_OTEL_RESOURCE_ATTRIBUTES
+              value: "service.name=sbomer-syft-generator"
+
             # Generator Logic
             - name: SBOMER_GENERATOR_MAX_CONCURRENT
               value: {{ .Values.config.maxConcurrent | quote }}

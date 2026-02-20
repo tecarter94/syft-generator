@@ -131,6 +131,7 @@ helm upgrade --install sbomer-release "./$PLATFORM_DIR" \
     --set global.includeKafka=true \
     --set global.includeApicurio=true \
     --set global.includeApiGateway=true \
+    --set global.includeOtelLgtm=true \
     --set syft-generator-chart.image.repository=localhost/syft-generator \
     --set syft-generator-chart.image.tag=latest \
     --set syft-generator-chart.image.pullPolicy=Never \
