@@ -21,7 +21,7 @@ spec:
       description: "Container image to generate manifest for"
     - name: retry-count
       type: string
-      default: "30"
+      default: "5"
     - name: retry-delay
       type: string
       default: "1"
