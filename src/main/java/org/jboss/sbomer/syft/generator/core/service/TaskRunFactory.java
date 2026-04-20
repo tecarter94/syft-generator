@@ -30,11 +30,19 @@ public class TaskRunFactory {
     @ConfigProperty(name = "sbomer.storage.url")
     String storageUrl;
 
+    // Kueue Integration
+    @ConfigProperty(name = "sbomer.generator.kueue.enabled", defaultValue = "false")
+    boolean kueueEnabled;
+
+    @ConfigProperty(name = "sbomer.generator.kueue.queue-name", defaultValue = "syft-local-queue")
+    String kueueQueueName;
+
     private static final String LABEL_GENERATION_ID = "sbomer.jboss.org/generation-id";
     private static final String LABEL_GENERATOR_TYPE = "sbomer.jboss.org/generator-type";
     private static final String GENERATOR_TYPE_VALUE = "syft";
     private static final String ANNOTATION_RETRY_COUNT = "sbomer.jboss.org/retry-count";
     private static final String ANNOTATION_TRACEPARENT = "sbomer.jboss.org/traceparent";
+    private static final String KUEUE_QUEUE_ANNOTATION = "kueue.x-k8s.io/queue-name";
 
     public TaskRun createTaskRun(GenerationTask generationTask) {
         String generationId = generationTask.generationId();
@@ -50,11 +58,15 @@ public class TaskRunFactory {
         }
 
         // 2. Prepare Labels
-        Map<String, String> labels = Map.of(
-                LABEL_GENERATION_ID, generationId,
-                LABEL_GENERATOR_TYPE, GENERATOR_TYPE_VALUE,
-                "app.kubernetes.io/managed-by", "sbomer-syft-generator"
-        );
+        Map<String, String> labels = new java.util.HashMap<>();
+        labels.put(LABEL_GENERATION_ID, generationId);
+        labels.put(LABEL_GENERATOR_TYPE, GENERATOR_TYPE_VALUE);
+        labels.put("app.kubernetes.io/managed-by", "sbomer-syft-generator");
+        
+        // Add Kueue queue label if enabled
+        if (kueueEnabled) {
+            labels.put(KUEUE_QUEUE_ANNOTATION, kueueQueueName);
+        }
 
         // 3. Build the SPEC separately (This fixes the fluent chain issues)
         TaskRunSpecBuilder specBuilder = new TaskRunSpecBuilder()

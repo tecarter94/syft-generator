@@ -175,3 +175,25 @@ nodeSelector: {}
 tolerations: []
 
 affinity: {}
+
+# --- KUEUE INTEGRATION ---
+kueue:
+  # Enable Kueue-based queuing
+  enabled: false
+  
+  # LocalQueue name (namespace-scoped)
+  localQueue:
+    name: syft-local-queue
+  
+  # ClusterQueue name (cluster-scoped)
+  clusterQueue:
+    name: syft-cluster-queue
+    queueingStrategy: StrictFIFO
+    quotas:
+      cpu: 100
+      memory: 200Gi
+      pods: 20  # Equivalent to maxConcurrent
+  
+  # ResourceFlavor name
+  resourceFlavor:
+    name: default-flavor

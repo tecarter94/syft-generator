@@ -59,6 +59,10 @@ public class GeneratorService implements GenerationOrchestrator {
     @ConfigProperty(name = "sbomer.generator.default-memory", defaultValue = "1Gi")
     String defaultMemory;
 
+    // Kueue Integration
+    @ConfigProperty(name = "sbomer.generator.kueue.enabled", defaultValue = "false")
+    boolean kueueEnabled;
+
     // In-memory buffer (FOR NOW - SHOULD LATER BE PERSISTENT)
     private final Queue<GenerationTask> pendingQueue = new ConcurrentLinkedQueue<>();
     private final Map<String, GenerationTask> activeTasks = new ConcurrentHashMap<>();
@@ -66,8 +70,30 @@ public class GeneratorService implements GenerationOrchestrator {
     @Override
     public void acceptRequest(String generationId, GenerationRequestSpec request, String traceParent) {
         log.info("Accepted request for generation: {}", generationId);
-        // We don't execute immediately, we queue it to respect the throttling limit
-        pendingQueue.add(new GenerationTask(generationId, request, traceParent));
+        
+        if (kueueEnabled) {
+            // NEW PATH: Direct execution with Kueue handling queuing
+            log.info("Kueue enabled - scheduling TaskRun directly for generation: {}", generationId);
+            try {
+                GenerationTask task = new GenerationTask(generationId, request, traceParent);
+                executor.scheduleGeneration(task);
+                
+                // Notify that it's been queued (Kueue will handle admission)
+                notifier.notifyStatus(generationId, GenerationStatus.GENERATING, 
+                    "Queued in Kueue", null);
+                    
+            } catch (Exception e) {
+                log.error("Failed to schedule generation {} with Kueue", generationId, e);
+                notifier.notifyStatus(generationId, GenerationStatus.FAILED, 
+                    "Failed to queue: " + e.getMessage(), null);
+                failureNotifier.notify(FailureUtility.buildFailureSpecFromException(e), 
+                    generationId, null);
+            }
+        } else {
+            // OLD PATH: In-memory queue with throttling
+            log.debug("Using in-memory queue for generation: {}", generationId);
+            pendingQueue.add(new GenerationTask(generationId, request, traceParent));
+        }
     }
 
     @WithSpan
@@ -92,6 +118,11 @@ public class GeneratorService implements GenerationOrchestrator {
 
     @Scheduled(every = "{sbomer.generator.poll-interval:10s}")
     public void processQueue() {
+        // Skip queue processing when Kueue is enabled
+        if (kueueEnabled) {
+            return;
+        }
+        
         if (pendingQueue.isEmpty()) {
             return;
         }

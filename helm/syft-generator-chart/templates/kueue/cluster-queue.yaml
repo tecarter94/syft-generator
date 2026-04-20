@@ -1,0 +1,20 @@
+{{- if .Values.kueue.enabled }}
+apiVersion: kueue.x-k8s.io/v1beta1
+kind: ClusterQueue
+metadata:
+  name: {{ .Values.kueue.clusterQueue.name }}
+spec:
+  namespaceSelector: {}
+  resourceGroups:
+  - coveredResources: ["cpu", "memory", "pods"]
+    flavors:
+    - name: {{ .Values.kueue.resourceFlavor.name }}
+      resources:
+      - name: "cpu"
+        nominalQuota: {{ .Values.kueue.clusterQueue.quotas.cpu }}
+      - name: "memory"
+        nominalQuota: {{ .Values.kueue.clusterQueue.quotas.memory }}
+      - name: "pods"
+        nominalQuota: {{ .Values.kueue.clusterQueue.quotas.pods }}
+  queueingStrategy: {{ .Values.kueue.clusterQueue.queueingStrategy }}
+{{- end }}

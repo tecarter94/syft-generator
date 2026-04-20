@@ -137,7 +137,8 @@ helm upgrade --install sbomer-release "./$PLATFORM_DIR" \
     --set syft-generator-chart.image.pullPolicy=Never \
     --set syft-generator-chart.task.agent.image=localhost/syft-agent \
     --set syft-generator-chart.task.agent.tag=latest \
-    --set syft-generator-chart.task.agent.pullPolicy=Never
+    --set syft-generator-chart.task.agent.pullPolicy=Never \
+    --set syft-generator-chart.kueue.enabled=true
 
 echo "--- Forcing Rolling Restart to pick up new local image ---"
 # We ignore "not found" errors in case it's the very first install
