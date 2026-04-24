@@ -1,4 +1,3 @@
-{{- if .Values.kueue.enabled }}
 apiVersion: kueue.x-k8s.io/v1beta1
 kind: LocalQueue
 metadata:
@@ -6,4 +5,3 @@ metadata:
   namespace: {{ .Release.Namespace }}
 spec:
   clusterQueue: {{ .Values.kueue.clusterQueue.name }}
-{{- end }}

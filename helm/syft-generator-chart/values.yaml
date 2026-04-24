@@ -50,8 +50,6 @@ config:
   otel:
     protocol: grpc
     endpoint: "" # placeholder
-  maxConcurrent: 20
-  oomRetries: 3
   # Default internal cluster URL for storage
   storageUrl: "http://manifest-storage-service:8085"
 
@@ -176,23 +174,21 @@ tolerations: []
 
 affinity: {}
 
-# --- KUEUE INTEGRATION ---
+# --- KUEUE CONFIGURATION ---
+# Kueue for Tekton Task queue management
 kueue:
-  # Enable Kueue-based queuing
-  enabled: false
-  
   # LocalQueue name (namespace-scoped)
   localQueue:
     name: syft-local-queue
   
-  # ClusterQueue name (cluster-scoped)
+  # ClusterQueue configuration (cluster-scoped)
   clusterQueue:
     name: syft-cluster-queue
-    queueingStrategy: StrictFIFO
+    queueingStrategy: BestEffortFIFO
     quotas:
       cpu: 100
       memory: 200Gi
-      pods: 20  # Equivalent to maxConcurrent
+      pods: 5  # Max concurrent TaskRuns
   
   # ResourceFlavor name
   resourceFlavor:

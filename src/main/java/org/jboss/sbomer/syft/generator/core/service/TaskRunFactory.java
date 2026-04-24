@@ -31,9 +31,6 @@ public class TaskRunFactory {
     String storageUrl;
 
     // Kueue Integration
-    @ConfigProperty(name = "sbomer.generator.kueue.enabled", defaultValue = "false")
-    boolean kueueEnabled;
-
     @ConfigProperty(name = "sbomer.generator.kueue.queue-name", defaultValue = "syft-local-queue")
     String kueueQueueName;
 
@@ -62,11 +59,7 @@ public class TaskRunFactory {
         labels.put(LABEL_GENERATION_ID, generationId);
         labels.put(LABEL_GENERATOR_TYPE, GENERATOR_TYPE_VALUE);
         labels.put("app.kubernetes.io/managed-by", "sbomer-syft-generator");
-        
-        // Add Kueue queue label if enabled
-        if (kueueEnabled) {
-            labels.put(KUEUE_QUEUE_ANNOTATION, kueueQueueName);
-        }
+        labels.put(KUEUE_QUEUE_ANNOTATION, kueueQueueName);
 
         // 3. Build the SPEC separately (This fixes the fluent chain issues)
         TaskRunSpecBuilder specBuilder = new TaskRunSpecBuilder()
@@ -82,7 +75,6 @@ public class TaskRunFactory {
                         )
                 );
 
-        // 4. Handle Memory Override (Conditional Logic)
         if (generationTask.memoryOverride() != null) {
             // We add to the existing spec builder
             specBuilder.addToStepOverrides(
@@ -96,14 +88,12 @@ public class TaskRunFactory {
             );
         }
 
-        // 5. Build annotations map
         Map<String, String> annotations = new java.util.HashMap<>();
         annotations.put(ANNOTATION_RETRY_COUNT, String.valueOf(generationTask.retryCount()));
         if (generationTask.traceParent() != null) {
             annotations.put(ANNOTATION_TRACEPARENT, generationTask.traceParent());
         }
 
-        // 6. Combine into Final TaskRun
         return new TaskRunBuilder()
                 .withNewMetadata()
                 .withGenerateName("syft-gen-" + shortenId(generationId) + "-")

@@ -6,35 +6,43 @@ It acts as a **Kubernetes Operator** that listens for generation events, manages
 
 ## Architecture
 
-This service follows **Hexagonal Architecture (Ports and Adapters)** to decouple the scheduling logic from the execution infrastructure.
+This service follows **Hexagonal Architecture (Ports and Adapters)** to decouple the scheduling logic from the execution infrastructure. It uses **Kubernetes Kueue** for persistent, cloud-native queue management.
 
 ### 1. Core Domain (Business Logic)
-* **`GeneratorService`:** The "Brain". It manages the internal work queue (Leaky Bucket pattern), enforces concurrency limits, and handles retry policies (e.g., OOM handling).
-* **`TaskRunFactory`:** Translates generic `GenerationRequestSpec` objects into specific Tekton `TaskRun` definitions (YAML), applying resource limits and parameters.
+* **`GeneratorService`:** The "Brain". It accepts generation requests and creates TaskRuns directly. Kueue handles queuing and admission control.
+* **`TaskRunFactory`:** Translates generic `GenerationRequestSpec` objects into specific Tekton `TaskRun` definitions (YAML) with Kueue annotations, applying resource limits and parameters.
 
 ### 2. Driving Adapters (Input)
-* **`KafkaRequestConsumer`:** Listens to the `generation.created` topic. If the request matches `sbomer.generator.name=syft-generator`, it queues it for execution.
+* **`KafkaRequestConsumer`:** Listens to the `generation.created` topic. If the request matches `sbomer.generator.name=syft-generator`, it triggers TaskRun creation.
 * **`TaskReconciler`:** A Kubernetes Controller (using Java Operator SDK) that watches for `TaskRun` completion. It updates the core domain when a task succeeds or fails.
 
 ### 3. Driven Adapters (Output)
 * **`TektonGenerationExecutor`:** Uses the Fabric8 Kubernetes Client to create/delete TaskRuns in the cluster.
 * **`KafkaStatusNotifier`:** Sends `generation.update` events (GENERATING, FINISHED, FAILED) back to the `sbom-service` control plane.
 
+### 4. Queue Management (Kueue)
+* **Kueue:** Kubernetes-native queuing system that manages TaskRun admission based on resource quotas
+* **LocalQueue:** Namespace-scoped queue for syft-generator TaskRuns
+* **ClusterQueue:** Cluster-scoped queue with resource quotas (CPU, memory, pods)
+* **ResourceFlavor:** Defines the resource characteristics for workloads
+
 ---
 
 ## Features
 
-### 1. Throttling & Queueing
-To prevent overwhelming the Kubernetes cluster, this service maintains an internal **Priority Queue**.
-* **`sbomer.generator.max-concurrent`**: Controls how many TaskRuns can exist simultaneously.
-* New requests are queued in memory.
-* A scheduler runs every 10s to drain the queue into the cluster as slots become available.
+### 1. Kubernetes-Native Queueing with Kueue
+TaskRuns are queued and admitted using **Kueue**, a Kubernetes-native queuing system.
+* **Persistent Queue**: Queue state stored in etcd (survives pod restarts)
+* **Automatic Admission Control**: Kueue manages TaskRun admission based on resource quotas
+* **`kueue.clusterQueue.quotas.pods`**: Controls max concurrent TaskRuns (replaces old `maxConcurrent`)
+* **No Manual Throttling**: Kueue automatically queues TaskRuns when quotas are exhausted
 
-### 2. Self-Healing (OOM Retries)
-The service detects if a TaskRun was killed due to **Out Of Memory (OOM)** issues.
-* **Detection:** The Reconciler parses the container termination reason.
-* **Reaction:** Instead of failing immediately, the service calculates a new memory limit (compounding multiplier) and re-schedules the task transparently.
-* **Result:** The `sbom-service` only sees `GENERATING` -> `FINISHED`, unaware of the retries happening in the background.
+### 2. Generous Memory Limits
+TaskRuns are configured with generous memory limits (4Gi) to minimize OOM (Out of Memory) failures.
+* **Memory Allocation:** 2Gi request / 4Gi limit for the generation step
+* **Rationale:** With 4Gi limit, OOM should be rare for typical container images
+* **Failure Handling:** If OOM occurs, the task fails and requires manual investigation
+* **Note:** OOM retry logic has been removed for simplicity. If a workload needs more than 4Gi, it likely indicates an exceptional case requiring analysis.
 
 ### 3. Atomic Batch Uploads
 The generated SBOMs are uploaded directly from the TaskRun pod to the [Manifest Storage Service](https://github.com/sbomer-project/manifest-storage-service) using an atomic batch transaction. The Generator Service receives the resulting URLs via the TaskRun results.
@@ -43,15 +51,50 @@ The generated SBOMs are uploaded directly from the TaskRun pod to the [Manifest 
 
 ## Configuration
 
+### Application Properties
+
 | Property | Description | Default                         |
 | :--- | :--- |:--------------------------------|
 | `sbomer.generator.name` | The name used to filter incoming Kafka events. | `syft`                          |
 | `sbomer.generator.syft.task-name` | The Tekton Task name to instantiate. | `generator-syft`                |
-| `sbomer.generator.max-concurrent` | Max active TaskRuns allowed. | `20`                            |
+| `sbomer.generator.kueue.queue-name` | The Kueue LocalQueue name for TaskRuns. | `syft-local-queue`              |
 | `sbomer.generator.oom-retries` | Number of times to retry on OOM. | `3`                             |
 | `sbomer.generator.memory-multiplier` | Factor to increase memory by on retry (e.g. 1.5x). | `1.5`                           |
-| `sbomer.storage.url` | internal URL of the storage service reachable by Pods. | `http://<get-minikube-ip>:8085` |
+| `sbomer.storage.url` | Internal URL of the storage service reachable by Pods. | `http://<get-minikube-ip>:8085` |
 | `quarkus.kubernetes-client.namespace` | The namespace where TaskRuns are created. | `default`                       |
+
+### Kueue Configuration (Helm Values)
+
+| Property | Description | Default |
+| :--- | :--- | :--- |
+| `kueue.localQueue.name` | LocalQueue name (namespace-scoped) | `syft-local-queue` |
+| `kueue.clusterQueue.name` | ClusterQueue name (cluster-scoped) | `syft-cluster-queue` |
+| `kueue.clusterQueue.quotas.pods` | Max concurrent TaskRuns | `20` |
+| `kueue.clusterQueue.quotas.cpu` | CPU quota for queue | `100` |
+| `kueue.clusterQueue.quotas.memory` | Memory quota for queue | `200Gi` |
+| `kueue.clusterQueue.queueingStrategy` | Queuing strategy (StrictFIFO or BestEffortFIFO) | `StrictFIFO` |
+| `kueue.resourceFlavor.name` | ResourceFlavor name | `default-flavor` |
+
+---
+
+## Prerequisites
+
+### Required Components
+
+1. **Kubernetes Cluster** with:
+   - Tekton Pipelines installed
+   - **Kueue** installed (required for queue management)
+
+2. **Install Kueue:**
+   ```bash
+   kubectl apply --server-side -f https://github.com/kubernetes-sigs/kueue/releases/download/v0.17.1/manifests.yaml
+   ```
+
+3. **Verify Kueue Installation:**
+   ```bash
+   kubectl get pods -n kueue-system
+   kubectl get crd taskruns.tekton.dev
+   ```
 
 ---
 

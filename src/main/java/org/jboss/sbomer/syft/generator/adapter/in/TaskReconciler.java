@@ -41,8 +41,6 @@ public class TaskReconciler implements Reconciler<TaskRun> {
     @Inject
     Tracer tracer;
 
-    private static final String REASON_OOM_KILLED = "OOMKilled";
-
     private static final String GENERATION_ID_LABEL = "sbomer.jboss.org/generation-id";
     private static final String RESULT_NAME_SBOM_URL = "sbom-url";
     private static final String TRACEPARENT_ANNOTATION = "sbomer.jboss.org/traceparent";
@@ -112,19 +110,10 @@ public class TaskReconciler implements Reconciler<TaskRun> {
 
         // Failure Case
         if (isFailed(taskRun)) {
-            String reason;
-            // Check specifically for OOM
-            if (isOomKilled(taskRun)) {
-                log.warn("TaskRun '{}' OOMKilled for generation {}", taskName, generationId);
-                reason = "OOMKilled";
-            } else {
-                log.warn("TaskRun '{}' FAILED. Reason: TaskRun Failed", taskName);
-                reason = "TaskRun Failed";
-            }
+            log.warn("TaskRun '{}' FAILED for generation {}", taskName, generationId);
+            String reason = statusReason != null ? statusReason : "TaskRun Failed";
             Span.current().setStatus(StatusCode.ERROR, reason);
-            // Notify core with specific status or reason string
             orchestrator.handleUpdate(generationId, GenerationStatus.FAILED, reason, null);
-
             return UpdateControl.noUpdate();
         }
 
@@ -176,19 +165,6 @@ public class TaskReconciler implements Reconciler<TaskRun> {
                 .findFirst()
                 .map(r -> r.getValue().getStringVal())
                 .orElse(null);
-    }
-
-    /**
-     * Checks if any container in the pod was killed due to OutOfMemory.
-     */
-    private boolean isOomKilled(TaskRun taskRun) {
-        if (taskRun.getStatus() == null || taskRun.getStatus().getSteps() == null) {
-            return false;
-        }
-        // Iterate over all steps to see if any were terminated by OOM
-        return taskRun.getStatus().getSteps().stream()
-                .filter(step -> step.getTerminated() != null)
-                .anyMatch(step -> REASON_OOM_KILLED.equals(step.getTerminated().getReason()));
     }
 
 }
