@@ -15,39 +15,11 @@ public interface GenerationExecutor {
      * Schedules the generation payload for execution.
      * <p>
      * In a Kubernetes/Tekton implementation, this creates the TaskRun resource.
+     * Kueue manages the TaskRun lifecycle, including queuing, admission control,
+     * and cleanup after completion.
      * </p>
      *
      * @param generationTask The object carrying information about a generation task
      */
     void scheduleGeneration(GenerationTask generationTask);
-
-    /**
-     * Aborts resources associated with a specific generation.
-     * <p>
-     * Used for manual cancellation.
-     * </p>
-     *
-     * @param generationId The unique ID to identify the resources.
-     */
-    void abortGeneration(String generationId);
-
-    /**
-     * Cleans up resources associated with a specific generation.
-     * <p>
-     * Used for cleaning up the environment after the generation has ended.
-     * </p>
-     *
-     * @param generationId The unique ID to identify the resources.
-     */
-    void cleanupGeneration(String generationId);
-
-    /**
-     * Returns the number of currently active/running executions managed by this generator.
-     * <p>
-     * This is critical for the Core Domain's "Throttling" logic.
-     * </p>
-     *
-     * @return count of active jobs.
-     */
-    int countActiveExecutions();
 }
