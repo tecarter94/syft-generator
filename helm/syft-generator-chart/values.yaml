@@ -177,19 +177,26 @@ affinity: {}
 # --- KUEUE CONFIGURATION ---
 # Kueue for Tekton Task queue management
 kueue:
-  # LocalQueue name (namespace-scoped)
-  localQueue:
-    name: syft-local-queue
+  # Enable/disable Kueue resources
+  enabled: true
+  
+  # ResourceFlavor configuration (cluster-scoped)
+  resourceFlavor:
+    name: default-flavor
   
   # ClusterQueue configuration (cluster-scoped)
   clusterQueue:
     name: syft-cluster-queue
     queueingStrategy: BestEffortFIFO
-    quotas:
-      cpu: 100
-      memory: 200Gi
-      pods: 5  # Max concurrent TaskRuns
+    # Resource quotas for the cluster queue
+    resources:
+      - name: cpu
+        nominalQuota: 100
+      - name: memory
+        nominalQuota: 200Gi
+      - name: pods
+        nominalQuota: 20  # Max concurrent TaskRuns
   
-  # ResourceFlavor name
-  resourceFlavor:
-    name: default-flavor
+  # LocalQueue configuration (namespace-scoped)
+  localQueue:
+    name: syft-local-queue
