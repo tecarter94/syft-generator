@@ -57,12 +57,6 @@ spec:
             - name: QUARKUS_OTEL_RESOURCE_ATTRIBUTES
               value: "service.name=sbomer-syft-generator"
 
-            # Generator Logic
-            - name: SBOMER_GENERATOR_MAX_CONCURRENT
-              value: {{ .Values.config.maxConcurrent | quote }}
-            - name: SBOMER_GENERATOR_OOM_RETRIES
-              value: {{ .Values.config.oomRetries | quote }}
-
             # Tekton Task Identity
             - name: SBOMER_GENERATOR_SYFT_TASK_NAME
               value: {{ .Values.task.name | quote }}
@@ -94,6 +88,10 @@ spec:
             # Pass the actual Helm-generated Service Account name
             - name: SBOMER_GENERATOR_SERVICE_ACCOUNT
               value: {{ include "syft-generator-chart.serviceAccountName" . | quote }}
+
+            # Kueue Configuration
+            - name: SBOMER_GENERATOR_KUEUE_QUEUE_NAME
+              value: {{ .Values.kueue.localQueue.name | quote }}
 
             # Needed for cluster deployment
             {{- if .Values.config.quarkus.kubernetesClientMasterUrl }}
