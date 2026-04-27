@@ -32,7 +32,6 @@ public class TektonGenerationExecutor implements GenerationExecutor {
     @Override
     public void scheduleGeneration(GenerationTask generationTask) {
         Objects.requireNonNull(generationTask, "generationTask cannot be null");
-        Objects.requireNonNull(generationTask.generationId(), "generationId cannot be null");
 
         String generationId = generationTask.generationId();
         log.info("Scheduling TaskRun for generation: {}", generationId);

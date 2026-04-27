@@ -85,26 +85,7 @@ public class TaskReconciler implements Reconciler<TaskRun> {
         // Success Case
         if (isSuccessful(taskRun)) {
             log.info("TaskRun '{}' SUCCEEDED for generation {}", taskName, generationId);
-
-            try {
-                String jsonResult = getTaskRunResult(taskRun, RESULT_NAME_SBOM_URL);
-                if (jsonResult == null) {
-                    throw new RuntimeException("Result '" + RESULT_NAME_SBOM_URL + "' not found in TaskRun");
-                }
-
-                Map<String, String> urlMap = objectMapper.readValue(jsonResult, new TypeReference<>() {});
-                List<String> urls = new ArrayList<>(urlMap.values());
-
-                orchestrator.handleUpdate(generationId, GenerationStatus.FINISHED, "TaskRun Succeeded", urls);
-
-            } catch (Exception e) {
-                log.error("Failed to parse results from TaskRun '{}'", taskName, e);
-                Span span = Span.current();
-                span.recordException(e);
-                span.setStatus(StatusCode.ERROR, e.getMessage());
-                orchestrator.handleUpdate(generationId, GenerationStatus.FAILED, "Result parsing failed: " + e.getMessage(), null);
-                failureNotifier.notify(FailureUtility.buildFailureSpecFromException(e), generationId, null);
-            }
+            handleSuccessfulTaskRun(taskRun, taskName, generationId);
             return UpdateControl.noUpdate();
         }
 
@@ -138,6 +119,43 @@ public class TaskReconciler implements Reconciler<TaskRun> {
             return "Unknown";
         }
         return tr.getStatus().getConditions().get(0).getReason();
+    }
+
+    private void handleSuccessfulTaskRun(TaskRun taskRun, String taskName, String generationId) {
+        try {
+            String jsonResult = getTaskRunResult(taskRun, RESULT_NAME_SBOM_URL);
+            if (jsonResult == null || jsonResult.trim().isEmpty()) {
+                handleMissingResult(generationId);
+                return;
+            }
+
+            Map<String, String> urlMap = objectMapper.readValue(jsonResult, new TypeReference<>() {
+            });
+            List<String> urls = new ArrayList<>(urlMap != null ? urlMap.values() : List.of());
+
+            if (urls.isEmpty()) {
+                log.warn("TaskRun succeeded but returned empty URL list for generation {}", generationId);
+            }
+
+            orchestrator.handleUpdate(generationId, GenerationStatus.FINISHED, "TaskRun Succeeded", urls);
+
+        } catch (Exception e) {
+            log.error("Failed to parse results from TaskRun '{}': {}", taskName, e.getMessage(), e);
+            Span.current().recordException(e);
+            Span.current().setStatus(StatusCode.ERROR, e.getMessage());
+            orchestrator.handleUpdate(generationId, GenerationStatus.FAILED,
+                    "Result parsing failed: " + e.getMessage(), null);
+            failureNotifier.notify(FailureUtility.buildFailureSpecFromException(e), generationId, null);
+        }
+    }
+
+    private void handleMissingResult(String generationId) {
+        String errorMsg = "Result '" + RESULT_NAME_SBOM_URL + "' not found or empty in TaskRun";
+        log.error("{} for generation {}", errorMsg, generationId);
+        orchestrator.handleUpdate(generationId, GenerationStatus.FAILED, errorMsg, null);
+        failureNotifier.notify(
+                FailureUtility.buildFailureSpecFromException(new IllegalStateException(errorMsg)),
+                generationId, null);
     }
 
     private boolean isSuccessful(TaskRun tr) {

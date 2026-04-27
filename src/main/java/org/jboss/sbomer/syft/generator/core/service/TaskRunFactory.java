@@ -4,6 +4,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 
 import org.eclipse.microprofile.config.inject.ConfigProperty;
 import org.jboss.sbomer.events.common.GenerationRequestSpec;
@@ -13,8 +14,10 @@ import io.fabric8.kubernetes.api.model.EmptyDirVolumeSource;
 import io.fabric8.kubernetes.api.model.Quantity;
 import io.fabric8.tekton.v1beta1.*;
 import jakarta.enterprise.context.ApplicationScoped;
+import lombok.extern.slf4j.Slf4j;
 
 @ApplicationScoped
+@Slf4j
 public class TaskRunFactory {
 
     // The name of the Tekton Task applied in the cluster (e.g., "generator-syft")
@@ -37,13 +40,16 @@ public class TaskRunFactory {
     private static final String LABEL_GENERATION_ID = "sbomer.jboss.org/generation-id";
     private static final String LABEL_GENERATOR_TYPE = "sbomer.jboss.org/generator-type";
     private static final String GENERATOR_TYPE_VALUE = "syft";
-    private static final String ANNOTATION_RETRY_COUNT = "sbomer.jboss.org/retry-count";
     private static final String ANNOTATION_TRACEPARENT = "sbomer.jboss.org/traceparent";
     private static final String KUEUE_QUEUE_ANNOTATION = "kueue.x-k8s.io/queue-name";
 
     public TaskRun createTaskRun(GenerationTask generationTask) {
+        Objects.requireNonNull(generationTask, "generationTask cannot be null");
+
         String generationId = generationTask.generationId();
         GenerationRequestSpec request = generationTask.spec();
+
+        log.debug("Creating TaskRun for generation: {}", generationId);
 
         // 1. Prepare Parameters
         List<Param> params = new ArrayList<>();
@@ -71,9 +77,7 @@ public class TaskRunFactory {
                                 new WorkspaceBindingBuilder()
                                         .withName("data")
                                         .withEmptyDir(new EmptyDirVolumeSource())
-                                        .build()
-                        )
-                );
+                                        .build()));
 
         if (generationTask.memoryOverride() != null) {
             // We add to the existing spec builder
@@ -84,12 +88,10 @@ public class TaskRunFactory {
                             .withRequests(Map.of("memory", new Quantity(generationTask.memoryOverride())))
                             .withLimits(Map.of("memory", new Quantity(generationTask.memoryOverride())))
                             .endResources()
-                            .build()
-            );
+                            .build());
         }
 
         Map<String, String> annotations = new java.util.HashMap<>();
-        annotations.put(ANNOTATION_RETRY_COUNT, String.valueOf(generationTask.retryCount()));
         if (generationTask.traceParent() != null) {
             annotations.put(ANNOTATION_TRACEPARENT, generationTask.traceParent());
         }
@@ -108,7 +110,9 @@ public class TaskRunFactory {
      * Helper to shorten UUIDs for K8s resource naming limits (63 chars)
      */
     private String shortenId(String id) {
-        if (id == null) return "unknown";
+        if (id == null || id.isEmpty()) {
+            return "unknown";
+        }
         String safeId = id.toLowerCase();
         return safeId.length() > 8 ? safeId.substring(0, 8) : safeId;
     }
