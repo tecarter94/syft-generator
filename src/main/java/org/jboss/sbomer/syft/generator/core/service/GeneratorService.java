@@ -1,6 +1,7 @@
 package org.jboss.sbomer.syft.generator.core.service;
 
 import java.util.List;
+import java.util.Objects;
 
 import org.jboss.sbomer.events.common.GenerationRequestSpec;
 import org.jboss.sbomer.syft.generator.core.domain.GenerationStatus;
@@ -30,47 +31,53 @@ public class GeneratorService implements GenerationOrchestrator {
     @Inject
     FailureNotifier failureNotifier;
 
-
     @Override
     public void acceptRequest(String generationId, GenerationRequestSpec request, String traceParent) {
+        Objects.requireNonNull(generationId, "generationId cannot be null");
+        Objects.requireNonNull(request, "request cannot be null");
+
         log.info("Accepted request for generation: {}", generationId);
-        
+
         try {
             GenerationTask task = new GenerationTask(generationId, request, traceParent);
             executor.scheduleGeneration(task);
-            
+
             // Kueue handles queuing and admission control
-            notifier.notifyStatus(generationId, GenerationStatus.GENERATING,
-                "Queued for execution", null);
-                
+            notifier.notifyStatus(
+                    generationId,
+                    GenerationStatus.GENERATING,
+                    "Queued for execution",
+                    null);
+
         } catch (Exception e) {
             log.error("Failed to schedule generation {}", generationId, e);
-            notifier.notifyStatus(generationId, GenerationStatus.FAILED,
-                "Failed to queue: " + e.getMessage(), null);
-            failureNotifier.notify(FailureUtility.buildFailureSpecFromException(e),
-                generationId, null);
+            notifier.notifyStatus(
+                    generationId,
+                    GenerationStatus.FAILED,
+                    "Failed to queue: " + e.getMessage(),
+                    null);
+            failureNotifier.notify(
+                    FailureUtility.buildFailureSpecFromException(e),
+                    generationId,
+                    null);
         }
     }
 
     @WithSpan
     @Override
-    public void handleUpdate(@SpanAttribute("generation.id") String generationId, GenerationStatus status, String reason, List<String> resultUrls) {
+    public void handleUpdate(
+            @SpanAttribute("generation.id") String generationId,
+            GenerationStatus status,
+            String reason,
+            List<String> resultUrls) {
+        Objects.requireNonNull(generationId, "generationId cannot be null");
+        Objects.requireNonNull(status, "status cannot be null");
+
         log.info("Handling update for generation {}: {}", generationId, status);
 
         // Notify the status (sbom-service will listen to this)
         notifier.notifyStatus(generationId, status, reason, resultUrls);
 
-        // If it was a running job that finished, trigger a cleanup
-        // via the executor (e.g. delete the TaskRun)
-        doCleanupIfFinished(generationId, status);
+        // Note: Kueue handles TaskRun cleanup automatically after completion
     }
-
-
-
-    private void doCleanupIfFinished(String generationId, GenerationStatus status) {
-        if (status == GenerationStatus.FINISHED || status == GenerationStatus.FAILED) {
-            executor.cleanupGeneration(generationId);
-        }
-    }
-
 }
